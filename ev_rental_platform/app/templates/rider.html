@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+{% block title %}Rider Dashboard | Urban EV Solutions{% endblock %}
+{% block body_class %}dashboard-body rider-body{% endblock %}
+
+{% block hero_title %}RIDER MOBILITY CONSOLE{% endblock %}
+{% block hero_subtitle %}ADMIN-APPROVED EV ALLOCATION &bull; DAILY RENTAL ₹100.00{% endblock %}
+
+{% block nav %}
+<span class="nav-badge-user"><span class="nav-role">RIDER</span>{{ user.username }}</span>
+<a href="/logout" class="btn-nav-action">Sign out</a>
+{% endblock %}
+
+{% block content %}
+<div class="container-body rider-dashboard">
+    {% if rental_notice %}
+    <div class="admin-breakdown-notice" role="status">
+        {% if rental_notice == 'documents-required' %}
+            Upload all four documents and wait for administrator approval before requesting a scooter.
+        {% elif rental_notice == 'returned' %}
+            Scooter checked out successfully. The vehicle is available for the next rider.
+        {% elif rental_notice == 'request-submitted' %}
+            Your vehicle request is waiting for administrator approval. You will only be charged when it is approved.
+        {% elif rental_notice == 'no-active-rental' %}
+            There is no active scooter rental to check out.
+        {% elif rental_notice == 'insufficient-balance' %}
+            Ask an administrator to add at least ₹100 to your wallet before requesting a scooter.
+        {% elif rental_notice == 'no-vehicle' %}
+            No scooters are currently available. Please try again later.
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if upload_notice == 'submitted' %}
+    <div class="document-notice" role="status">Documents submitted. You can request a scooter after administrator approval.</div>
+    {% endif %}
+    {% if upload_error %}
+    <div class="document-notice document-notice-error" role="alert">{{ upload_error }}</div>
+    {% endif %}
+
+    <!-- Stat Summary Row -->
+    <div class="stat-summary-row">
+        <div class="stat-card">
+            <div class="stat-card-title">Digital Wallet Balance</div>
+            <div class="stat-card-number">₹{{ "%.2f"|format(user.wallet_balance or 0.0) }}</div>
+        </div>
+        <div class="stat-card navy-top">
+            <div class="stat-card-title">Daily Rental Tariff</div>
+            <div class="stat-card-number">₹100.00</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-card-title">Hub Scooters Ready</div>
+            <div class="stat-card-number">{{ available_count }}</div>
+        </div>
+        <div class="stat-card navy-top">
+            <div class="stat-card-title">Active Allocation</div>
+            <div class="stat-card-number">
+                {% if active_rental %}ACTIVE{% else %}NONE{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="grid-two-col">
+        <!-- Scooter Dispatch Action Panel -->
+        <div class="corporate-panel allocation-panel">
+            <div class="corporate-panel-header">
+                <div class="corporate-panel-title">Vehicle Allocation Status</div>
+            </div>
+            <div class="corporate-panel-body">
+                {% if active_rental and active_rental.vehicle %}
+                    <div class="active-scooter-hud">
+                        <div class="hud-row">
+                            <div>
+                                <div class="hud-label">Vehicle Registration</div>
+                                <div class="hud-value">{{ active_rental.vehicle.reg_number }}</div>
+                            </div>
+                            <div>
+                                <div class="hud-label">Battery Level</div>
+                                <div class="hud-value">{{ active_rental.vehicle.battery_level }}%</div>
+                            </div>
+                            <div>
+                                <div class="hud-label">Daily Tariff</div>
+                                <div class="hud-value">₹{{ "%.2f"|format(active_rental.cost or 100.0) }}</div>
+                            </div>
+                        </div>
+                        <div class="rental-start-time">
+                            Start Time: {{ active_rental.start_time.strftime('%Y-%m-%d %H:%M:%S UTC') if active_rental.start_time else 'Active' }}
+                        </div>
+                    </div>
+
+                    <p class="panel-copy">
+                        Once you finish your daily trips, park at our designated parking space and click below to return the scooter.
+                    </p>
+
+                    <form method="POST" action="/rider/vehicle/return">
+                        <button type="submit" class="btn-corp btn-corp-danger">Return Vehicle &amp; Check Out</button>
+                    </form>
+                {% else %}
+                    <p class="panel-copy">
+                        Your vehicle is assigned only after an administrator approves your request.
+                    </p>
+
+                    <section class="document-verification" id="documents" aria-labelledby="documents-title">
+                        <div class="breakdown-action-heading">
+                            <span class="breakdown-kicker">RIDER VERIFICATION</span>
+                            <h3 id="documents-title">Required documents</h3>
+                        </div>
+                        {% if rider_documents and rider_documents.status == 'approved' %}
+                            <p class="document-status document-status-approved" role="status">Your documents are approved. Request a scooter and wait for an administrator to approve the allocation.</p>
+                            {% if vehicle_request and vehicle_request.status == 'pending' %}
+                                <p class="document-status" role="status">Your vehicle request is awaiting administrator approval. No rental fee has been charged yet.</p>
+                            {% else %}
+                                {% if vehicle_request and vehicle_request.status == 'rejected' %}
+                                    <p class="document-status document-status-rejected" role="alert">Your previous vehicle request was rejected. You may submit another request.</p>
+                                {% endif %}
+                                <form method="POST" action="/rider/vehicle/unlock">
+                                    {% if (user.wallet_balance or 0.0) < 100.0 or available_count == 0 %}
+                                        <button type="submit" class="btn-corp btn-corp-primary" disabled>
+                                            Request Vehicle Allocation
+                                        </button>
+                                        <p class="form-notice">
+                                            {% if (user.wallet_balance or 0.0) < 100.0 %}Ask an administrator to add at least ₹100 to your wallet.{% else %}No scooters are currently available.{% endif %}
+                                        </p>
+                                    {% else %}
+                                        <button type="submit" class="btn-corp btn-corp-primary">
+                                            Request Vehicle Allocation
+                                        </button>
+                                        <p class="form-notice">The ₹100 daily rental fee is charged only if your request is approved.</p>
+                                    {% endif %}
+                                </form>
+                            {% endif %}
+                        {% elif rider_documents and rider_documents.status == 'pending' %}
+                            <p class="document-status" role="status">Your documents are awaiting administrator review. You can request a scooter after approval.</p>
+                        {% else %}
+                            {% if rider_documents and rider_documents.status == 'rejected' %}
+                                <p class="document-status document-status-rejected" role="alert">Your documents were not approved. Please upload all four documents again.</p>
+                            {% else %}
+                                <p class="document-status">Upload all four documents. Accepted formats: JPG, PNG, WEBP, or PDF. Maximum size: 100 MB per file.</p>
+                            {% endif %}
+                            <form method="POST" action="/rider/documents" enctype="multipart/form-data" class="document-upload-form" id="rider-document-form">
+                                <div class="document-upload-grid">
+                                    <div>
+                                        <label for="driving-license" class="form-label">Driving licence</label>
+                                        <input type="file" id="driving-license" name="driving_license" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" required>
+                                    </div>
+                                    <div>
+                                        <label for="aadhaar-card" class="form-label">Aadhaar card</label>
+                                        <input type="file" id="aadhaar-card" name="aadhaar_card" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" required>
+                                    </div>
+                                    <div>
+                                        <label for="bank-passbook" class="form-label">Bank passbook</label>
+                                        <input type="file" id="bank-passbook" name="bank_passbook" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" required>
+                                    </div>
+                                    <div>
+                                        <label for="passport-photo" class="form-label">Passport-size photo</label>
+                                        <input type="file" id="passport-photo" name="passport_photo" accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf" required>
+                                    </div>
+                                </div>
+                                <p class="document-upload-limit">Each file must be 100 MB or smaller. Your documents are only available to administrators for review.</p>
+                                <p class="document-upload-error" id="document-upload-error" role="alert" aria-live="assertive"></p>
+                                <button type="submit" class="btn-corp btn-corp-primary">Submit documents for approval</button>
+                            </form>
+                        {% endif %}
+                    </section>
+                {% endif %}
+
+                <section class="breakdown-action" id="breakdown" aria-labelledby="breakdown-title">
+                    <div class="breakdown-action-heading">
+                        <span class="breakdown-kicker">VEHICLE SUPPORT</span>
+                        <h3 id="breakdown-title">Vehicle breakdown?</h3>
+                    </div>
+                    {% if active_breakdown %}
+                        {% if active_breakdown.status == 'replacement_assigned' %}
+                            <p class="breakdown-copy" role="status">
+                                Replacement {{ active_breakdown.replacement_vehicle.reg_number }} is assigned to this rental.
+                                The existing rental charge carries over; no second rental fee was added. The broken vehicle
+                                {{ active_breakdown.vehicle.reg_number }} remains out of service until repair.
+                            </p>
+                            <span class="badge-corp badge-green">Replacement approved</span>
+                        {% else %}
+                            <p class="breakdown-copy" role="status">
+                                Your report for {{ active_breakdown.vehicle.reg_number }} was sent to the fleet team at
+                                {{ active_breakdown.reported_at.strftime('%Y-%m-%d %H:%M') }} and is awaiting replacement approval.
+                            </p>
+                            <span class="badge-corp badge-amber">Awaiting approval</span>
+                        {% endif %}
+                    {% elif active_rental %}
+                        <p class="breakdown-copy">Report a problem with your current vehicle. The fleet team will see it in the admin breakdown queue.</p>
+                        <form method="POST" action="/rider/breakdown" class="breakdown-form" id="breakdown-form">
+                            <label for="breakdown-description" class="form-label">What happened? <span>(optional)</span></label>
+                            <textarea id="breakdown-description" name="description" maxlength="500" rows="3" placeholder="Describe the issue or your location"></textarea>
+                            <div class="location-capture">
+                                <button type="button" class="btn-corp btn-corp-navy" id="capture-breakdown-location">Capture current location</button>
+                                <p class="location-status" id="breakdown-location-status" aria-live="polite">GPS location is required with the report.</p>
+                            </div>
+                            <input type="hidden" name="latitude" id="breakdown-latitude">
+                            <input type="hidden" name="longitude" id="breakdown-longitude">
+                            <input type="hidden" name="location_accuracy" id="breakdown-location-accuracy">
+                            <button type="submit" class="btn-corp btn-corp-danger" id="submit-breakdown" disabled>Report breakdown</button>
+                        </form>
+                    {% else %}
+                        <p class="breakdown-copy">Breakdown reporting is available while you have an active rental.</p>
+                    {% endif %}
+                </section>
+            </div>
+        </div>
+
+        <!-- Wallet management panel -->
+        <div class="corporate-panel wallet-panel">
+            <div class="corporate-panel-header">
+                <div class="corporate-panel-title">Wallet management</div>
+            </div>
+            <div class="corporate-panel-body">
+                <p class="panel-copy">
+                    Wallet funds are added by an administrator. Contact the fleet administrator if your balance needs to be recharged.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ledger History -->
+    <div class="corporate-panel ledger-panel">
+        <div class="corporate-panel-header">
+            <div class="corporate-panel-title">Transaction Ledger</div>
+        </div>
+        <div class="table-responsive">
+            <table class="corp-table">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Transaction Type</th>
+                        <th>Reference ID</th>
+                        <th>Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if transactions %}
+                        {% for txn in transactions %}
+                        <tr>
+                            <td>{{ txn.created_at.strftime('%Y-%m-%d %H:%M:%S') if txn.created_at else '-' }}</td>
+                            <td>{{ 'Admin wallet credit' if txn.type == 'admin_wallet_credit' else txn.type.replace('_', ' ')|title }}</td>
+                            <td>{{ txn.upi_ref or '-' }}</td>
+                            <td class="amount-cell {% if txn.amount > 0 %}amount-positive{% else %}amount-negative{% endif %}">
+                                ₹{{ "%.2f"|format(txn.amount) }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="4" class="empty-state">
+                                No transactions recorded.
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<script>
+(() => {
+    const form = document.getElementById("rider-document-form");
+    if (!form) return;
+
+    const maxSize = 100 * 1024 * 1024;
+    const notice = document.getElementById("document-upload-error");
+    const inputs = form.querySelectorAll('input[type="file"]');
+
+    inputs.forEach(input => {
+        input.addEventListener("change", () => {
+            const file = input.files && input.files[0];
+            if (file && file.size > maxSize) {
+                input.value = "";
+                notice.textContent = "Please upload image within 100 MB. Each document must be 100 MB or smaller.";
+                input.focus();
+            } else {
+                notice.textContent = "";
+            }
+        });
+    });
+
+    form.addEventListener("submit", event => {
+        const oversizedFile = Array.from(inputs).some(input =>
+            input.files && input.files[0] && input.files[0].size > maxSize
+        );
+        if (oversizedFile) {
+            event.preventDefault();
+            notice.textContent = "Please upload image within 100 MB. Each document must be 100 MB or smaller.";
+        }
+    });
+})();
+
+(() => {
+    const form = document.getElementById("breakdown-form");
+    if (!form) return;
+
+    const captureButton = document.getElementById("capture-breakdown-location");
+    const status = document.getElementById("breakdown-location-status");
+    const submitButton = document.getElementById("submit-breakdown");
+    const latitude = document.getElementById("breakdown-latitude");
+    const longitude = document.getElementById("breakdown-longitude");
+    const accuracy = document.getElementById("breakdown-location-accuracy");
+
+    captureButton.addEventListener("click", () => {
+        if (!navigator.geolocation) {
+            status.textContent = "Location is unavailable in this browser.";
+            status.classList.add("location-error");
+            return;
+        }
+
+        captureButton.disabled = true;
+        status.textContent = "Getting your location...";
+        status.classList.remove("location-error");
+        navigator.geolocation.getCurrentPosition(position => {
+            latitude.value = position.coords.latitude;
+            longitude.value = position.coords.longitude;
+            accuracy.value = position.coords.accuracy;
+            status.textContent = `Location captured: ${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)} (within ${Math.round(position.coords.accuracy)} m).`;
+            submitButton.disabled = false;
+            captureButton.disabled = false;
+        }, () => {
+            status.textContent = "Location permission was denied or unavailable. Allow location access and try again.";
+            status.classList.add("location-error");
+            captureButton.disabled = false;
+        }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    });
+
+    form.addEventListener("submit", event => {
+        if (!latitude.value || !longitude.value || !accuracy.value) {
+            event.preventDefault();
+            status.textContent = "Capture your GPS location before submitting the report.";
+            status.classList.add("location-error");
+        }
+    });
+})();
+</script>
+{% endblock %}

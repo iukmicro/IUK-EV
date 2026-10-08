@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Privacy Policy | Urban EV Fleet{% endblock %}
+
+{% block hero_title %}PRIVACY POLICY &amp; DATA GOVERNANCE{% endblock %}
+{% block hero_subtitle %}PROTECTING OPERATIONAL INTEGRITY &amp; RIDER TELEMETRY DATA{% endblock %}
+
+{% block content %}
+<div class="container-body">
+    <div class="corporate-panel">
+        <div class="corporate-panel-header">
+            <div class="corporate-panel-title">Privacy Policy &bull; Version 2.4</div>
+        </div>
+        <div class="corporate-panel-body" style="font-size: 13px; color: var(--text-secondary); line-height: 1.8;">
+            <h3 style="color: var(--corporate-navy); font-size: 15px; margin-bottom: 8px;">1. Information Collection</h3>
+            <p style="margin-bottom: 16px;">We collect rider identification records, uploaded driving licences, Aadhaar cards, bank passbooks and passport-size photos, administrator wallet-credit audit references, vehicle unlock timestamps, and automated GPS hub arrival logs necessary for asset security and fleet lifecycle management.</p>
+
+            <h3 style="color: var(--corporate-navy); font-size: 15px; margin-bottom: 8px;">2. Telemetry and Geofencing</h3>
+            <p style="margin-bottom: 16px;">Our vehicles transmit real-time battery status and operational telemetry. Location tracking is restricted to geofence boundaries and hub check-in reconciliation.</p>
+
+            <h3 style="color: var(--corporate-navy); font-size: 15px; margin-bottom: 8px;">3. Data Protection</h3>
+            <p style="margin-bottom: 16px;">Uploaded verification documents are stored outside the public static-file directory and are available for in-browser viewing or download only to authenticated administrator accounts for review. Each upload is limited to 100 MB. Rider credentials and audit trails are cryptographically salted and hashed. We do not sell or monetize personal trip logs with third-party advertisers.</p>
+
+            <h3 style="color: var(--corporate-navy); font-size: 15px; margin-bottom: 8px;">4. Document Review</h3>
+            <p>Riders must submit all four verification documents before requesting a scooter. An administrator reviews the documents and separately approves each vehicle allocation request before a scooter is assigned. If a document set is rejected, riders may submit a replacement set.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

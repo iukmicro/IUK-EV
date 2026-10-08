@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Create Rider Account | Urban EV Fleet{% endblock %}
+
+{% block hero_title %}RIDER ONBOARDING REGISTRATION{% endblock %}
+{% block hero_subtitle %}CREATE YOUR COMMERCIAL MOBILITY ACCOUNT &bull; ADMIN-MANAGED WALLET{% endblock %}
+
+{% block nav %}
+<a href="/login" class="btn-nav-action" style="background: var(--corporate-navy);">Sign In</a>
+{% endblock %}
+
+{% block content %}
+<div class="login-wrapper-outer">
+    <div class="login-corp-card">
+        <div class="login-corp-header">
+            <div class="login-corp-title">Create Rider Account</div>
+            <div class="login-corp-subtitle">Register to request administrator-approved electric scooters and manage your wallet</div>
+        </div>
+
+        {% if error %}
+        <div class="alert-error">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" action="/register">
+            <label for="full_name" class="form-label">Full name</label>
+            <input type="text" id="full_name" name="full_name" class="form-control" placeholder="Enter your full name" maxlength="100" required autofocus autocomplete="name">
+
+            <label for="mobile_number" class="form-label">Mobile number</label>
+            <input type="tel" id="mobile_number" name="mobile_number" class="form-control" placeholder="Include country code if needed" maxlength="20" required autocomplete="tel">
+
+            <label for="password" class="form-label">Create password</label>
+            <input type="password" id="password" name="password" class="form-control" placeholder="At least 8 characters" minlength="8" required autocomplete="new-password">
+
+            <label for="confirm_password" class="form-label">Confirm Password</label>
+            <input type="password" id="confirm_password" name="confirm_password" class="form-control" placeholder="Re-type password" required autocomplete="new-password">
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
+                <button type="submit" class="btn-corp btn-corp-primary" style="width: 100%;">Sign Up</button>
+                <a href="/login" class="btn-corp btn-corp-navy" style="width: 100%; text-decoration: none;">Back to Login</a>
+            </div>
+        </form>
+
+        <div style="margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--border-light); font-size: 11px; color: var(--text-muted); text-align: center;">
+            Already registered? <a href="/login" style="color: var(--brand-orange); font-weight: 700; text-decoration: none;">Sign In here</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

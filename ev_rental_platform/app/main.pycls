@@ -1,0 +1,211 @@
+import os
+from fastapi import FastAPI, Request, Form, Depends, status, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+
+# Local application imports (using package relative/absolute imports)
+try:
+    from app.database import engine, get_db, Base
+    from app.models import User, Vehicle, Rental, Transaction
+    from app.auth import verify_password
+except ImportError:
+    from database import engine, get_db, Base
+    from models import User, Vehicle, Rental, Transaction
+    from auth import verify_password
+
+# Create tables if not already present
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title="Urban EV Fleet Rental Platform")
+
+# Mount static folder
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+# Template configuration
+templates = Jinja2Templates(directory="app/templates")
+
+
+# --------------------------------------------------------------------------
+# Public Page Routes
+# --------------------------------------------------------------------------
+
+@app.get("/", response_class=HTMLResponse)
+def home_page(request: Request):
+    """Renders the main landing page using base.html."""
+    return templates.TemplateResponse(request=request, name="base.html")
+
+
+@app.get("/services", response_class=HTMLResponse)
+def services_page(request: Request):
+    """Renders the services template."""
+    return templates.TemplateResponse(request=request, name="services.html")
+
+
+@app.get("/fleet", response_class=HTMLResponse)
+def fleet_info_page(request: Request, db: Session = Depends(get_db)):
+    """Renders the fleet information page listing active/available vehicles."""
+    vehicles = db.query(Vehicle).all()
+    return templates.TemplateResponse(
+        "base.html", 
+        {"request": request, "vehicles": vehicles}
+    )
+
+
+# --------------------------------------------------------------------------
+# Authentication & Onboarding Routes
+# --------------------------------------------------------------------------
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    """Renders the standalone login page."""
+    return templates.TemplateResponse(request=request, name="login.html")
+
+
+@app.post("/login", response_class=HTMLResponse)
+def handle_login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Processes user sign-in and enforces onboarding approval constraints."""
+    user = db.query(User).filter(User.username == username).first()
+
+    # Credential verification
+    is_valid_pw = False
+    if user:
+        if hasattr(user, "password") and user.password == password:
+            is_valid_pw = True
+        elif hasattr(user, "hashed_password"):
+            try:
+                is_valid_pw = verify_password(password, user.hashed_password)
+            except Exception:
+                is_valid_pw = False
+
+    if not user or not is_valid_pw:
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Invalid username or password."},
+            status_code=status.HTTP_401_UNAUTHORIZED
+        )
+
+    # Onboarding approval gate
+    if not getattr(user, "is_approved", True):
+        return templates.TemplateResponse(
+            "login.html",
+            {
+                "request": request, 
+                "error": "Your account is pending administrator approval. Please contact support."
+            },
+            status_code=status.HTTP_403_FORBIDDEN
+        )
+
+    # Role-based redirect
+    if getattr(user, "role", "") == "admin":
+        return RedirectResponse(url="/admin", status_code=status.HTTP_303_SEE_OTHER)
+
+    return RedirectResponse(url="/rider", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page(request: Request):
+    """Renders user registration form."""
+    return templates.TemplateResponse(request=request, name="register.html")
+
+
+@app.post("/register", response_class=HTMLResponse)
+def handle_register(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Registers new riders with is_approved=False by default."""
+    existing_user = db.query(User).filter(User.username == username).first()
+    if existing_user:
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "error": "Username already exists."}
+        )
+
+    new_user = User(
+        username=username,
+        password=password,
+        role="rider",
+        is_approved=False
+    )
+    db.add(new_user)
+    db.commit()
+
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "error": "Registration submitted! Please wait for admin approval."}
+    )
+
+
+# --------------------------------------------------------------------------
+# Protected Portals & Admin Approval Actions
+# --------------------------------------------------------------------------
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_portal(request: Request, db: Session = Depends(get_db)):
+    """Admin dashboard displaying fleet state and pending rider approvals."""
+    pending_riders = db.query(User).filter(User.role == "rider", User.is_approved == False).all()
+    approved_riders = db.query(User).filter(User.role == "rider", User.is_approved == True).all()
+    vehicles = db.query(Vehicle).all()
+    
+    return templates.TemplateResponse(
+        "admin.html",
+        {
+            "request": request,
+            "pending_riders": pending_riders,
+            "approved_riders": approved_riders,
+            "vehicles": vehicles
+        }
+    )
+
+
+@app.post("/admin/rider/approve")
+def approve_rider(rider_id: int = Form(...), db: Session = Depends(get_db)):
+    """Approve a pending rider."""
+    rider = db.query(User).filter(User.id == rider_id).first()
+    if rider:
+        rider.is_approved = True
+        db.commit()
+    return RedirectResponse(url="/admin", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.post("/admin/rider/reject")
+def reject_rider(rider_id: int = Form(...), db: Session = Depends(get_db)):
+    """Reject or remove a rider request."""
+    rider = db.query(User).filter(User.id == rider_id).first()
+    if rider:
+        db.delete(rider)
+        db.commit()
+    return RedirectResponse(url="/admin", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@app.get("/rider", response_class=HTMLResponse)
+def rider_portal(request: Request, db: Session = Depends(get_db)):
+    """Rider dashboard displaying available fleet for rental."""
+    available_vehicles = db.query(Vehicle).filter(Vehicle.status == "available").all()
+    return templates.TemplateResponse(
+        "rider.html",
+        {"request": request, "vehicles": available_vehicles}
+    )
+
+
+# --------------------------------------------------------------------------
+# Legal Pages
+# --------------------------------------------------------------------------
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy_page(request: Request):
+    return templates.TemplateResponse(request=request, name="privacy.html")
+
+
+@app.get("/terms", response_class=HTMLResponse)
+def terms_page(request: Request):
+    return templates.TemplateResponse(request=request, name="terms.html")

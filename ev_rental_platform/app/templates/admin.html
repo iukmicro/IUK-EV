@@ -1,0 +1,1124 @@
+{% extends "base.html" %}
+{% macro rider_document_preview(rider, document_type, label, stored_path) %}
+{% set viewer_url = "/admin/rider-documents/" ~ rider.id ~ "/" ~ document_type %}
+{% set is_image = stored_path.lower().endswith((".jpg", ".jpeg", ".png", ".webp")) %}
+<div class="document-preview-card">
+    <div class="document-preview-heading">{{ label }}</div>
+    <button
+        type="button"
+        class="document-preview-trigger"
+        data-document-url="{{ viewer_url }}"
+        data-document-type="{{ 'image' if is_image else 'pdf' }}"
+        data-document-title="{{ label }} — {{ rider.full_name or rider.username }}"
+        aria-label="Open {{ label|lower }} for {{ rider.full_name or rider.username }}">
+        {% if is_image %}
+        <img
+            src="{{ viewer_url }}"
+            alt="{{ label }} for {{ rider.full_name or rider.username }}"
+            loading="lazy">
+        {% else %}
+        <span class="document-pdf-preview" aria-hidden="true">PDF<br><span>Click to view</span></span>
+        {% endif %}
+    </button>
+    <a href="{{ viewer_url }}?download=true">Download {{ label|lower }}</a>
+</div>
+{% endmacro %}
+
+{% block title %}Fleet Administrator | Urban EV Solutions{% endblock %}
+{% block body_class %}dashboard-body admin-body{% endblock %}
+
+{% block hero_title %}FLEET OPERATIONS &amp; ASSET AUDIT{% endblock %}
+{% block hero_subtitle %}REAL-TIME TRACKING, ALLOCATIONS &amp; VEHICLE LIFECYCLE MANAGEMENT{% endblock %}
+
+{% block nav %}
+<span class="nav-badge-user"><span class="nav-role">ADMIN</span>{{ user.username }}</span>
+<a href="/logout" class="btn-nav-action">Sign out</a>
+{% endblock %}
+
+{% block content %}
+<div class="container-body admin-dashboard">
+    <div class="admin-live-toast-container" id="admin-live-toast-container" role="status" aria-live="assertive" aria-relevant="additions"></div>
+    <div class="document-notice" id="admin-live-action-status" role="status" aria-live="polite" hidden></div>
+    {% if breakdown_notice %}
+    <div class="admin-breakdown-notice" data-action-result="breakdowns" role="alert">
+        {% if breakdown_notice == 'no-replacement' %}
+            No available replacement vehicle is currently in the fleet.
+        {% elif breakdown_notice == 'inactive-rental' %}
+            This report no longer matches an active rental, so a replacement was not assigned.
+        {% else %}
+            This report has already been processed. Refresh the queue to see its current status.
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if password_notice %}
+    <div class="document-notice {% if password_notice != 'required' %}document-notice-error{% endif %}" role="{% if password_notice == 'required' %}status{% else %}alert{% endif %}">
+        {% if password_notice == 'required' %}
+            The rider must choose a new password the next time they sign in.
+        {% else %}
+            That rider account could not be found.
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if document_notice %}
+    <div class="document-notice" data-action-result="documents" role="status">
+        {% if document_notice == 'approved' %}
+            Rider documents approved. The rider can now request a vehicle allocation.
+        {% elif document_notice == 'rejected' %}
+            Rider documents rejected. The rider can submit a new set for review.
+        {% elif document_notice == 'missing-files' %}
+            At least one uploaded file is unavailable. Do not approve this document set; ask the rider to resubmit it.
+        {% else %}
+            This document set has already been reviewed.
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if rental_notice %}
+    <div class="document-notice" data-action-result="vehicle-requests" role="status">
+        {% if rental_notice == 'approved' %}
+            Vehicle request approved. The scooter was allocated and the ₹100 rental fee was charged.
+        {% elif rental_notice == 'rejected' %}
+            Vehicle request rejected. The rider can submit another request.
+        {% elif rental_notice == 'no-vehicle' %}
+            No scooters are currently available. This request remains pending.
+        {% elif rental_notice == 'insufficient-balance' %}
+            The rider's wallet balance is now below ₹100. The request remains pending.
+        {% elif rental_notice == 'rider-not-eligible' %}
+            The rider no longer meets the account, document, or active-rental requirements.
+        {% else %}
+            This vehicle request has already been reviewed.
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if rider_delete_notice %}
+    <div class="document-notice" role="status">
+        {% if rider_delete_notice == 'deleted' %}
+            Rider account deleted.
+        {% elif rider_delete_notice == 'has-history' %}
+            This rider has rental, payment, or breakdown history. Their account was kept so those records remain intact.
+        {% elif rider_delete_notice == 'not-found' %}
+            That rider account no longer exists.
+        {% endif %}
+    </div>
+    {% endif %}
+        {% if account_notice %}
+        <div class="document-notice {% if account_notice != 'updated' %}document-notice-error{% endif %}" role="{% if account_notice == 'updated' %}status{% else %}alert{% endif %}">
+            {% if account_notice == 'updated' %}
+                Rider account updated successfully.
+            {% elif account_notice == 'invalid-amount' %}
+            Enter a valid recharge amount greater than ₹0 and up to ₹10,00,000, using no more than two decimal places.
+            {% elif account_notice == 'invalid-password' %}
+                Enter a password between 8 and 128 characters.
+            {% elif account_notice == 'password-mismatch' %}
+                The new password and confirmation do not match.
+            {% elif account_notice == 'no-changes' %}
+                Enter a wallet credit amount, a new password, or both.
+            {% else %}
+                That rider account could not be found.
+            {% endif %}
+        </div>
+        {% endif %}
+    {% if status_notice %}
+    <div class="document-notice {% if status_notice != 'updated' %}document-notice-error{% endif %}" role="{% if status_notice == 'updated' %}status{% else %}alert{% endif %}">
+        {% if status_notice == 'updated' %}
+            Rider account status updated. The rider's existing wallet balance was not changed.
+        {% elif status_notice == 'unchanged' %}
+            The rider already has that account status; no new status change was recorded.
+        {% elif status_notice == 'invalid-status' %}
+            Choose Active, On Hold, or Suspended.
+        {% else %}
+            That rider account could not be found.
+        {% endif %}
+    </div>
+    {% endif %}
+    {% if plate_notice %}
+    <div class="document-notice" role="{% if plate_notice == 'duplicate' or plate_notice == 'invalid' or plate_notice == 'not-found' %}alert{% else %}status{% endif %}">
+        {% if plate_notice == 'updated' %}
+            Scooter number plate updated.
+        {% elif plate_notice == 'duplicate' %}
+            That number plate is already registered to another scooter.
+        {% elif plate_notice == 'invalid' %}
+            Enter a valid number plate of up to 30 characters.
+        {% else %}
+            That scooter could not be found. Refresh the inventory and try again.
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="corporate-panel document-review-panel" id="rider-accounts">
+        {% if rider_notice %}
+        <div class="document-notice {% if rider_notice != 'approved' %}document-notice-error{% endif %}" data-action-result="rider-accounts" role="{% if rider_notice == 'approved' %}status{% else %}alert{% endif %}">
+            {% if rider_notice == 'approved' %}
+                Rider account approved. The rider can now sign in and submit verification documents.
+            {% else %}
+                This rider account is no longer pending approval. Refresh the list and try again.
+            {% endif %}
+        </div>
+        {% endif %}
+        <div class="corporate-panel-header">
+            <div>
+                <div class="corporate-panel-title">Rider account approvals</div>
+                <p class="breakdown-panel-subtitle">Approve registration so a rider can sign in and submit verification documents.</p>
+            </div>
+            <span class="breakdown-count" role="status" data-pending-rider-count>{{ pending_riders|length }} pending</span>
+        </div>
+        <div class="table-responsive">
+            <table class="corp-table rider-approval-table" id="rider-approval-table">
+                <thead>
+                    <tr>
+                        <th>Rider details</th>
+                        <th>Registered</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rider in pending_riders %}
+                    <tr id="rider-registration-{{ rider.id }}">
+                        <td>
+                            <details class="rider-account-details">
+                                <summary>{{ rider.full_name or rider.username }}</summary>
+                                <div><strong>Mobile:</strong> {{ rider.mobile_number or rider.username }}</div>
+                                <div><strong>Status:</strong> Pending approval</div>
+                            </details>
+                        </td>
+                        <td>{{ rider.created_at.strftime('%Y-%m-%d %H:%M') if rider.created_at else '-' }}</td>
+                        <td>
+                            <div class="document-review-actions">
+                                <form method="POST" action="/admin/rider/approve">
+                                    <input type="hidden" name="rider_id" value="{{ rider.id }}">
+                                    <button type="submit" class="btn-corp btn-corp-primary btn-compact">Approve account</button>
+                                </form>
+                                <form method="POST" action="/admin/rider/reject">
+                                    <input type="hidden" name="rider_id" value="{{ rider.id }}">
+                                    <button type="submit" class="btn-corp btn-corp-danger btn-compact">Reject account</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="3" class="empty-state">No rider accounts are waiting for approval.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="corporate-panel document-review-panel" id="all-riders">
+        <div class="corporate-panel-header">
+            <div>
+                <div class="corporate-panel-title">Rider accounts</div>
+                <p class="breakdown-panel-subtitle">Select a rider name to view registration details and uploaded documents. Use Edit account to add wallet funds or set a new password. Passwords are never displayed.</p>
+            </div>
+            <span class="breakdown-count" role="status">{{ all_riders|length }} riders</span>
+        </div>
+        <div class="table-responsive">
+            <table class="corp-table rider-approval-table">
+                <thead>
+                    <tr>
+                        <th>Rider</th>
+                        <th>Mobile number</th>
+                        <th>Account status</th>
+                        <th>Wallet balance</th>
+                        <th>Registered</th>
+                        <th>Account action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rider in all_riders %}
+                    <tr>
+                        <td>
+                            <details class="rider-account-details">
+                                <summary>{{ rider.full_name or rider.username }}</summary>
+                                <div><strong>Name:</strong> {{ rider.full_name or 'Not provided' }}</div>
+                                <div><strong>Username:</strong> {{ rider.username }}</div>
+                                <div><strong>Mobile:</strong> {{ rider.mobile_number or rider.username }}</div>
+                                <div><strong>Account:</strong> {{ 'Approved' if rider.is_approved else 'Pending approval' }}</div>
+                                <div><strong>Account status:</strong> {{ {'active': 'Active', 'on_hold': 'On Hold', 'suspended': 'Suspended'}.get(rider.account_status or 'active', 'Active') }}</div>
+                                <div><strong>Password:</strong> {{ 'Reset required at next sign-in' if rider.password_reset_required else 'Set; never displayed' }}</div>
+                                <section class="rider-status-audit" aria-label="Rider account status history">
+                                    <strong>Status change history</strong>
+                                    {% for audit in rider.status_audits %}
+                                    <div>
+                                        {{ audit.previous_status.replace('_', ' ')|title }} → {{ audit.new_status.replace('_', ' ')|title }}
+                                        by {{ audit.admin.username if audit.admin else 'Unknown admin' }}
+                                        on {{ audit.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') if audit.created_at else '-' }}
+                                    </div>
+                                    {% else %}
+                                    <div>No status changes recorded.</div>
+                                    {% endfor %}
+                                </section>
+                                {% if rider.rider_documents %}
+                                <div><strong>Documents:</strong> {{ rider.rider_documents.status|title }}{% if rider.rider_documents.submitted_at %} (submitted {{ rider.rider_documents.submitted_at.strftime('%Y-%m-%d %H:%M') }}){% endif %}</div>
+                                <section class="rider-document-previews" aria-label="Uploaded rider documents">
+                                    <h4>Uploaded documents</h4>
+                                    {{ rider_document_preview(rider, 'driving_license', 'Driving licence', rider.rider_documents.driving_license_path) }}
+                                    {{ rider_document_preview(rider, 'aadhaar_card', 'Aadhaar card', rider.rider_documents.aadhaar_card_path) }}
+                                    {{ rider_document_preview(rider, 'bank_passbook', 'Bank passbook', rider.rider_documents.bank_passbook_path) }}
+                                    {{ rider_document_preview(rider, 'passport_photo', 'Passport photo', rider.rider_documents.passport_photo_path) }}
+                                </section>
+                                {% else %}
+                                <div><strong>Documents:</strong> Not submitted</div>
+                                {% endif %}
+                            </details>
+                        </td>
+                        <td>{{ rider.mobile_number or rider.username }}</td>
+                        <td>
+                            <span class="rider-status-badge rider-status-{{ rider.account_status or 'active' }}">
+                                {{ {'active': 'Active', 'on_hold': 'On Hold', 'suspended': 'Suspended'}.get(rider.account_status or 'active', 'Active') }}
+                            </span>
+                            {% if not rider.is_approved %}<div class="form-notice">Registration pending approval</div>{% endif %}
+                        </td>
+                        <td>₹{{ "%.2f"|format(rider.wallet_balance or 0.0) }}</td>
+                        <td>{{ rider.created_at.strftime('%Y-%m-%d %H:%M') if rider.created_at else '-' }}</td>
+                        <td>
+                            <div class="document-review-actions">
+                                <form method="POST" action="/admin/rider/status" class="rider-status-form">
+                                    <input type="hidden" name="rider_id" value="{{ rider.id }}">
+                                    <label class="visually-hidden" for="rider-status-{{ rider.id }}">Account status for {{ rider.full_name or rider.username }}</label>
+                                    <select id="rider-status-{{ rider.id }}" name="account_status">
+                                        <option value="active" {% if (rider.account_status or 'active') == 'active' %}selected{% endif %}>Active</option>
+                                        <option value="on_hold" {% if rider.account_status == 'on_hold' %}selected{% endif %}>On Hold</option>
+                                        <option value="suspended" {% if rider.account_status == 'suspended' %}selected{% endif %}>Suspended</option>
+                                    </select>
+                                    <button type="submit" class="btn-corp btn-corp-navy btn-compact">Update status</button>
+                                </form>
+                                <details class="rider-account-edit">
+                                    <summary>Edit account</summary>
+                                    <form method="POST" action="/admin/rider/edit" class="rider-account-edit-form">
+                                        <input type="hidden" name="rider_id" value="{{ rider.id }}">
+                                        <label for="wallet-edit-{{ rider.id }}">Add funds (₹)</label>
+                                        <input id="wallet-edit-{{ rider.id }}" type="number" name="amount" min="0.01" max="1000000" step="0.01" placeholder="Optional">
+                                        <label for="new-password-{{ rider.id }}">Set password</label>
+                                        <input id="new-password-{{ rider.id }}" type="password" name="new_password" minlength="8" maxlength="128" autocomplete="new-password" placeholder="Optional, 8-128 characters">
+                                        <label for="confirm-password-{{ rider.id }}">Confirm password</label>
+                                        <input id="confirm-password-{{ rider.id }}" type="password" name="confirm_new_password" minlength="8" maxlength="128" autocomplete="new-password" placeholder="Repeat new password">
+                                        <button type="submit" class="btn-corp btn-corp-primary btn-compact">Save changes</button>
+                                    </form>
+                                </details>
+                                {% if rider.id in rider_ids_with_history %}
+                                    <span class="form-notice">History retained; cannot delete</span>
+                                {% else %}
+                                    <form method="POST" action="/admin/rider/delete" onsubmit="return confirm('Permanently delete this rider account?')">
+                                        <input type="hidden" name="rider_id" value="{{ rider.id }}">
+                                        <button type="submit" class="btn-corp btn-corp-danger btn-compact">Delete account</button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="empty-state">No rider accounts are registered.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="corporate-panel document-review-panel" id="rider-documents">
+        <div class="corporate-panel-header">
+            <div>
+                <div class="corporate-panel-title">Rider document review</div>
+                <p class="breakdown-panel-subtitle">Review all four files before allowing a rider to request a scooter.</p>
+            </div>
+            <span class="breakdown-count" role="status" data-pending-document-count>{{ pending_document_sets|length }} pending</span>
+        </div>
+        <div class="table-responsive">
+            <table class="corp-table document-review-table" id="rider-documents-table">
+                <thead>
+                    <tr>
+                        <th>Rider</th>
+                        <th>Submitted</th>
+                        <th>Driving licence</th>
+                        <th>Aadhaar card</th>
+                        <th>Bank passbook</th>
+                        <th>Passport photo</th>
+                        <th>Decision</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for document_set in pending_document_sets %}
+                    <tr id="rider-documents-{{ document_set.id }}">
+                        <td>{{ document_set.rider.username }}</td>
+                        <td>{{ document_set.submitted_at.strftime('%Y-%m-%d %H:%M') if document_set.submitted_at else '-' }}</td>
+                        <td><a href="/admin/rider-documents/{{ document_set.rider_id }}/driving_license?download=true">Download</a></td>
+                        <td><a href="/admin/rider-documents/{{ document_set.rider_id }}/aadhaar_card?download=true">Download</a></td>
+                        <td><a href="/admin/rider-documents/{{ document_set.rider_id }}/bank_passbook?download=true">Download</a></td>
+                        <td><a href="/admin/rider-documents/{{ document_set.rider_id }}/passport_photo?download=true">Download</a></td>
+                        <td>
+                            <div class="document-review-actions">
+                                <form method="POST" action="/admin/rider-documents/{{ document_set.rider_id }}/approve">
+                                    <button type="submit" class="btn-corp btn-corp-primary btn-compact">Approve</button>
+                                </form>
+                                <form method="POST" action="/admin/rider-documents/{{ document_set.rider_id }}/reject">
+                                    <button type="submit" class="btn-corp btn-corp-danger btn-compact">Reject</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="empty-state">No rider documents are waiting for review.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="corporate-panel document-review-panel" id="vehicle-requests">
+        <div class="corporate-panel-header">
+            <div>
+                <div class="corporate-panel-title">Vehicle allocation requests</div>
+                <p class="breakdown-panel-subtitle">Approve a request to allocate the next available scooter and charge the ₹100 daily rental fee.</p>
+            </div>
+            <span class="breakdown-count" role="status" data-pending-vehicle-count>{{ pending_vehicle_requests|length }} pending</span>
+        </div>
+        <div class="table-responsive">
+            <table class="corp-table rider-approval-table" id="vehicle-requests-table">
+                <thead>
+                    <tr>
+                        <th>Rider</th>
+                        <th>Mobile number</th>
+                        <th>Wallet balance</th>
+                        <th>Requested</th>
+                        <th>Decision</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vehicle_request in pending_vehicle_requests %}
+                    <tr id="vehicle-request-{{ vehicle_request.id }}">
+                        <td>{{ vehicle_request.user.full_name or vehicle_request.user.username }}</td>
+                        <td>{{ vehicle_request.user.mobile_number or vehicle_request.user.username }}</td>
+                        <td>₹{{ "%.2f"|format(vehicle_request.user.wallet_balance or 0.0) }}</td>
+                        <td>{{ vehicle_request.requested_at.strftime('%Y-%m-%d %H:%M') if vehicle_request.requested_at else '-' }}</td>
+                        <td>
+                            <div class="document-review-actions">
+                                <form method="POST" action="/admin/vehicle-request/approve">
+                                    <input type="hidden" name="request_id" value="{{ vehicle_request.id }}">
+                                    <button type="submit" class="btn-corp btn-corp-primary btn-compact">Approve &amp; allocate</button>
+                                </form>
+                                <form method="POST" action="/admin/vehicle-request/reject">
+                                    <input type="hidden" name="request_id" value="{{ vehicle_request.id }}">
+                                    <button type="submit" class="btn-corp btn-corp-danger btn-compact">Reject</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="empty-state">No vehicle requests are waiting for approval.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Stat Summary Row -->
+    <div class="stat-summary-row">
+        <div class="stat-card">
+            <div class="stat-card-title">Total Fleet Registered</div>
+            <div class="stat-card-number">{{ vehicles|length }}</div>
+        </div>
+        <div class="stat-card navy-top">
+            <div class="stat-card-title">Active Rentals</div>
+            <div class="stat-card-number">
+                {{ rentals|selectattr('status', 'equalto', 'active')|list|length }}
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-card-title">Available in Hub</div>
+            <div class="stat-card-number">
+                {{ vehicles|selectattr('is_available', 'equalto', true)|list|length }}
+            </div>
+        </div>
+        <div class="stat-card navy-top">
+            <div class="stat-card-title">Open Breakdown Tickets</div>
+            <div class="stat-card-number" data-open-breakdown-count>{{ open_breakdown_count }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-card-title">Breakdown Tickets Resolved</div>
+            <div class="stat-card-number">{{ resolved_breakdown_count }}</div>
+        </div>
+    </div>
+
+    <div class="corporate-panel breakdown-admin-panel" id="breakdowns">
+        <div class="corporate-panel-header">
+            <div>
+                <div class="corporate-panel-title">Breakdown reports</div>
+                <p class="breakdown-panel-subtitle">Vehicle issues reported by riders</p>
+            </div>
+            <span class="breakdown-count" role="status" data-open-breakdown-label>{{ open_breakdown_count }} open</span>
+        </div>
+        <div class="table-responsive">
+            <table class="corp-table breakdown-table">
+                <thead>
+                    <tr>
+                        <th>Reported</th>
+                        <th>Rider</th>
+                        <th>Broken vehicle</th>
+                        <th>Breakdown location</th>
+                        <th>Replacement</th>
+                        <th>Issue details</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for report in breakdown_reports %}
+                    <tr id="breakdown-report-{{ report.id }}">
+                        <td>{{ report.reported_at.strftime('%Y-%m-%d %H:%M') if report.reported_at else '-' }}</td>
+                        <td>{{ report.rider.username }}</td>
+                        <td class="vehicle-registration">{{ report.vehicle.reg_number }}</td>
+                        <td class="breakdown-location-cell">
+                            {% if report.latitude is not none and report.longitude is not none %}
+                            <a href="https://maps.google.com/?q={{ report.latitude }},{{ report.longitude }}" target="_blank" rel="noopener noreferrer">Open map</a>
+                            <span>{{ "%.6f"|format(report.latitude) }}, {{ "%.6f"|format(report.longitude) }}</span>
+                            <small>Accuracy: {{ "%.0f"|format(report.location_accuracy) }} m</small>
+                            {% else %}
+                            <span>Location unavailable</span>
+                            {% endif %}
+                        </td>
+                        <td class="vehicle-registration">
+                            {{ report.replacement_vehicle.reg_number if report.replacement_vehicle else 'Not assigned' }}
+                        </td>
+                        <td class="breakdown-description">{{ report.description or 'No details provided' }}</td>
+                        <td>
+                            <span class="badge-corp {% if report.status == 'resolved' %}badge-green{% else %}badge-amber{% endif %}">
+                                {% if report.status == 'replacement_assigned' %}Replacement assigned{% else %}{{ report.status|title }}{% endif %}
+                            </span>
+                        </td>
+                        <td>
+                            {% if report.status == 'open' %}
+                            <form method="POST" action="/admin/breakdown/approve" class="inline-form">
+                                <input type="hidden" name="report_id" value="{{ report.id }}">
+                                <button type="submit" class="btn-corp btn-corp-primary btn-compact">Approve replacement</button>
+                            </form>
+                            {% elif report.status == 'replacement_assigned' %}
+                            <form method="POST" action="/admin/breakdown/resolve" class="inline-form">
+                                <input type="hidden" name="report_id" value="{{ report.id }}">
+                                <button type="submit" class="btn-corp btn-corp-navy btn-compact">Mark handoff complete</button>
+                            </form>
+                            {% else %}
+                            <span class="resolved-time">{{ report.resolved_at.strftime('%Y-%m-%d %H:%M') if report.resolved_at else 'Resolved' }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="empty-state">No breakdown reports yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Register New Scooter Panel -->
+    <div class="corporate-panel vehicle-form-panel">
+        <div class="corporate-panel-header">
+            <div class="corporate-panel-title">Add Vehicle to Fleet</div>
+        </div>
+        <div class="corporate-panel-body">
+            <form method="POST" action="/admin/vehicle/add" class="vehicle-form">
+                <div>
+                    <label for="reg_number" class="form-label">Vehicle Plate / Registration</label>
+                    <input type="text" id="reg_number" name="reg_number" class="form-control" placeholder="e.g. EV-BLR-101" required>
+                </div>
+                <div>
+                    <button type="submit" class="btn-corp btn-corp-primary">Add scooter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Fleet Inventory Roster -->
+    <div class="corporate-panel fleet-panel" id="fleet-inventory">
+        <div class="corporate-panel-header">
+            <div class="corporate-panel-title">Fleet Inventory Roster</div>
+            <span class="breakdown-panel-subtitle">Admins can update the scooter number plate.</span>
+            <input type="search" id="fleetSearch" oninput="filterFleet()" placeholder="Search plate..." aria-label="Search fleet by plate">
+        </div>
+        <div class="table-responsive fleet-table-scroll">
+            <table class="corp-table" id="fleetTable">
+                <thead>
+                    <tr>
+                        <th>Asset ID</th>
+                        <th>Plate Number</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for v in vehicles %}
+                    <tr>
+                        <td>#{{ v.id }}</td>
+                        <td>
+                            <form method="POST" action="/admin/vehicle/plate" class="inline-form">
+                                <input type="hidden" name="vehicle_id" value="{{ v.id }}">
+                                <input type="text" id="plate-{{ v.id }}" name="reg_number" value="{{ v.reg_number }}" maxlength="30" aria-label="Number plate for scooter {{ v.id }}" required>
+                                <button type="submit" class="btn-corp btn-corp-primary btn-compact">Save plate</button>
+                            </form>
+                        </td>
+                        <td>
+                            <span class="badge-corp {% if v.is_available %}badge-green{% else %}badge-red{% endif %}">
+                                {% if v.is_available %}Available{% else %}In Use{% endif %}
+                            </span>
+                        </td>
+                        <td>
+                                <form method="POST" action="/admin/vehicle/delete" onsubmit="return confirm('Delete vehicle {{ v.reg_number }}?');" class="inline-form">
+                                <input type="hidden" name="vehicle_id" value="{{ v.id }}">
+                                <button type="submit" class="btn-corp btn-corp-danger btn-compact">Remove</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Allocations Audit Trail -->
+    <div class="corporate-panel">
+        <div class="corporate-panel-header">
+            <div class="corporate-panel-title">Vehicle Allocation Records (Who &amp; When)</div>
+        </div>
+        <div class="table-responsive">
+            <table class="corp-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Rider</th>
+                        <th>Vehicle</th>
+                        <th>Dispatch Time</th>
+                        <th>Return Time</th>
+                        <th>Tariff</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in rentals %}
+                    <tr>
+                        <td>#{{ r.id }}</td>
+                        <td>{{ r.user.username }}</td>
+                        <td class="vehicle-registration">{{ r.vehicle.reg_number }}</td>
+                        <td>{{ r.start_time.strftime('%Y-%m-%d %H:%M:%S') if r.start_time else '-' }}</td>
+                        <td>{{ r.end_time.strftime('%Y-%m-%d %H:%M:%S') if r.end_time else 'Active' }}</td>
+                        <td>₹{{ "%.2f"|format(r.cost) }}</td>
+                        <td>
+                            <span class="badge-corp {% if r.status == 'active' %}badge-amber{% else %}badge-green{% endif %}">
+                                {{ r.status }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="empty-state">No allocation records found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<dialog class="rider-document-viewer" id="rider-document-viewer" aria-labelledby="rider-document-viewer-title">
+    <div class="rider-document-viewer-header">
+        <h2 id="rider-document-viewer-title"></h2>
+        <button type="button" class="viewer-close-button" data-viewer-close aria-label="Close document viewer">Close</button>
+    </div>
+    <div class="rider-document-viewer-toolbar" id="image-viewer-toolbar" hidden>
+        <button type="button" data-viewer-zoom="-0.25" aria-label="Zoom out">−</button>
+        <button type="button" data-viewer-zoom="0.25" aria-label="Zoom in">+</button>
+        <span id="image-zoom-level" aria-live="polite">100%</span>
+        <button type="button" data-viewer-fit>Fit to screen</button>
+        <button type="button" data-viewer-rotate>Rotate</button>
+        <button type="button" data-viewer-fullscreen>Full screen</button>
+        <a id="viewer-download" class="viewer-toolbar-link" href="#" download>Download</a>
+        <a id="viewer-new-tab" class="viewer-toolbar-link" href="#" target="_blank" rel="noopener noreferrer">Open in new tab</a>
+    </div>
+    <div class="rider-document-viewer-stage" id="rider-document-viewer-stage">
+        <img id="rider-document-viewer-image" alt="" hidden>
+        <iframe id="rider-document-viewer-pdf" title="Rider PDF document" hidden></iframe>
+    </div>
+</dialog>
+
+<script>
+(() => {
+    const toastContainer = document.getElementById("admin-live-toast-container");
+    if (!toastContainer || !window.EventSource) return;
+    const seenNotificationIds = new Set();
+    let audioContext;
+    let audioUnlocked = false;
+
+    async function unlockNotificationSound() {
+        if (audioUnlocked) return;
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+            window.removeEventListener("pointerdown", unlockNotificationSound);
+            window.removeEventListener("keydown", unlockNotificationSound);
+            return;
+        }
+
+        try {
+            audioContext ??= new AudioContextClass();
+            await audioContext.resume();
+            audioUnlocked = audioContext.state === "running";
+            if (audioUnlocked) {
+                window.removeEventListener("pointerdown", unlockNotificationSound);
+                window.removeEventListener("keydown", unlockNotificationSound);
+            }
+        } catch (error) {
+            console.error("Unable to enable admin notification sound.", error);
+        }
+    }
+
+    window.addEventListener("pointerdown", unlockNotificationSound);
+    window.addEventListener("keydown", unlockNotificationSound);
+
+    function playNotificationSound() {
+        if (!audioUnlocked || !audioContext) return;
+        const now = audioContext.currentTime;
+        const oscillator = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(880, now);
+        oscillator.frequency.setValueAtTime(1174.66, now + 0.11);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.18, now + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.32);
+        oscillator.connect(gain);
+        gain.connect(audioContext.destination);
+        oscillator.start(now);
+        oscillator.stop(now + 0.33);
+    }
+
+    function addCell(row, text, className = "") {
+        const cell = document.createElement("td");
+        cell.textContent = text;
+        if (className) cell.className = className;
+        row.appendChild(cell);
+        return cell;
+    }
+
+    function addActionForm(cell, action, idName, idValue, label, style) {
+        const form = document.createElement("form");
+        form.method = "POST";
+        form.action = action;
+        form.className = "inline-form";
+        if (idName) {
+            const hidden = document.createElement("input");
+            hidden.type = "hidden";
+            hidden.name = idName;
+            hidden.value = idValue;
+            form.appendChild(hidden);
+        }
+        const button = document.createElement("button");
+        button.type = "submit";
+        button.className = `btn-corp ${style} btn-compact`;
+        button.textContent = label;
+        form.appendChild(button);
+        cell.appendChild(form);
+    }
+
+    function addBreakdownRow(event) {
+        const tableBody = document.querySelector(".breakdown-table tbody");
+        if (!tableBody) return;
+        const row = document.createElement("tr");
+        row.id = `breakdown-report-${event.reference_id}`;
+
+        const reportedAt = event.created_at
+            ? new Date(`${event.created_at}Z`).toLocaleString()
+            : "-";
+        addCell(row, reportedAt);
+        addCell(row, event.rider);
+        addCell(row, event.vehicle, "vehicle-registration");
+
+        const location = document.createElement("td");
+        location.className = "breakdown-location-cell";
+        if (event.latitude !== null && event.longitude !== null) {
+            const mapLink = document.createElement("a");
+            mapLink.href = `https://maps.google.com/?q=${encodeURIComponent(`${event.latitude},${event.longitude}`)}`;
+            mapLink.target = "_blank";
+            mapLink.rel = "noopener noreferrer";
+            mapLink.textContent = "Open map";
+            location.appendChild(mapLink);
+
+            const coordinates = document.createElement("span");
+            coordinates.textContent = `${Number(event.latitude).toFixed(6)}, ${Number(event.longitude).toFixed(6)}`;
+            location.appendChild(coordinates);
+
+            const accuracy = document.createElement("small");
+            accuracy.textContent = event.location_accuracy === null
+                ? "Accuracy unavailable"
+                : `Accuracy: ${Math.round(event.location_accuracy)} m`;
+            location.appendChild(accuracy);
+        } else {
+            const unavailable = document.createElement("span");
+            unavailable.textContent = "Location unavailable";
+            location.appendChild(unavailable);
+        }
+        row.appendChild(location);
+
+        addCell(row, "Not assigned", "vehicle-registration");
+        addCell(row, event.description || "No details provided", "breakdown-description");
+
+        const statusCell = document.createElement("td");
+        const badge = document.createElement("span");
+        badge.className = "badge-corp badge-amber";
+        badge.textContent = "Open";
+        statusCell.appendChild(badge);
+        row.appendChild(statusCell);
+
+        const actionCell = document.createElement("td");
+        addActionForm(actionCell, "/admin/breakdown/approve", "report_id", event.reference_id, "Approve replacement", "btn-corp-primary");
+        row.appendChild(actionCell);
+
+        if (insertPendingRow(tableBody, row)) {
+            const openCount = document.querySelector("[data-open-breakdown-count]");
+            const openLabel = document.querySelector("[data-open-breakdown-label]");
+            if (openCount) openCount.textContent = Number(openCount.textContent.replaceAll(",", "")) + 1;
+            if (openLabel) openLabel.textContent = `${Number(openLabel.textContent.match(/\d+/)?.[0] || 0) + 1} open`;
+        }
+    }
+
+    function insertPendingRow(tableBody, row) {
+        const existingRow = document.getElementById(row.id);
+        if (existingRow) {
+            existingRow.remove();
+        }
+        const emptyState = tableBody.querySelector(".empty-state");
+        if (emptyState) emptyState.closest("tr").remove();
+        tableBody.prepend(row);
+        return !existingRow;
+    }
+
+    function updatePendingCount(selector) {
+        const badge = document.querySelector(selector);
+        if (!badge) return;
+        const count = Number(badge.textContent.match(/\d+/)?.[0] || 0) + 1;
+        badge.textContent = `${count} pending`;
+    }
+
+    function addRiderRegistration(event) {
+        const tableBody = document.querySelector("#rider-approval-table tbody");
+        if (!tableBody) return;
+        const row = document.createElement("tr");
+        row.id = `rider-registration-${event.reference_id}`;
+        const detailsCell = addCell(row, "");
+        const details = document.createElement("details");
+        details.className = "rider-account-details";
+        const summary = document.createElement("summary");
+        summary.textContent = event.rider;
+        details.appendChild(summary);
+        const mobile = document.createElement("div");
+        mobile.textContent = `Mobile: ${event.mobile_number}`;
+        details.appendChild(mobile);
+        const pending = document.createElement("div");
+        pending.textContent = "Status: Pending approval";
+        details.appendChild(pending);
+        detailsCell.appendChild(details);
+        addCell(row, new Date(`${event.created_at}Z`).toLocaleString());
+        const actions = addCell(row, "");
+        const actionGroup = document.createElement("div");
+        actionGroup.className = "document-review-actions";
+        addActionForm(actionGroup, "/admin/rider/approve", "rider_id", event.reference_id, "Approve account", "btn-corp-primary");
+        addActionForm(actionGroup, "/admin/rider/reject", "rider_id", event.reference_id, "Reject account", "btn-corp-danger");
+        actions.appendChild(actionGroup);
+        if (insertPendingRow(tableBody, row)) updatePendingCount("[data-pending-rider-count]");
+    }
+
+    function addDocumentRequest(event) {
+        const tableBody = document.querySelector("#rider-documents-table tbody");
+        if (!tableBody) return;
+        const row = document.createElement("tr");
+        row.id = `rider-documents-${event.reference_id}`;
+        addCell(row, event.rider);
+        addCell(row, new Date(`${event.created_at}Z`).toLocaleString());
+        for (const documentType of ["driving_license", "aadhaar_card", "bank_passbook", "passport_photo"]) {
+            const cell = addCell(row, "");
+            const link = document.createElement("a");
+            link.href = `/admin/rider-documents/${event.rider_id}/${documentType}?download=true`;
+            link.textContent = "Download";
+            cell.appendChild(link);
+        }
+        const decision = addCell(row, "");
+        const actions = document.createElement("div");
+        actions.className = "document-review-actions";
+        addActionForm(actions, `/admin/rider-documents/${event.rider_id}/approve`, "", "", "Approve", "btn-corp-primary");
+        addActionForm(actions, `/admin/rider-documents/${event.rider_id}/reject`, "", "", "Reject", "btn-corp-danger");
+        decision.appendChild(actions);
+        if (insertPendingRow(tableBody, row)) updatePendingCount("[data-pending-document-count]");
+    }
+
+    function addVehicleRequest(event) {
+        const tableBody = document.querySelector("#vehicle-requests-table tbody");
+        if (!tableBody) return;
+        const row = document.createElement("tr");
+        row.id = `vehicle-request-${event.reference_id}`;
+        addCell(row, event.rider);
+        addCell(row, event.mobile_number);
+        addCell(row, `₹${Number(event.wallet_balance || 0).toFixed(2)}`);
+        addCell(row, new Date(`${event.created_at}Z`).toLocaleString());
+        const decision = addCell(row, "");
+        const actions = document.createElement("div");
+        actions.className = "document-review-actions";
+        addActionForm(actions, "/admin/vehicle-request/approve", "request_id", event.reference_id, "Approve & allocate", "btn-corp-primary");
+        addActionForm(actions, "/admin/vehicle-request/reject", "request_id", event.reference_id, "Reject", "btn-corp-danger");
+        decision.appendChild(actions);
+        if (insertPendingRow(tableBody, row)) updatePendingCount("[data-pending-vehicle-count]");
+    }
+
+    function showNotification(event) {
+        let rowId;
+        let message;
+        if (event.category === "rider_registration") {
+            rowId = `rider-registration-${event.reference_id}`;
+            message = `New rider registration: ${event.rider} is waiting for approval. View request`;
+            addRiderRegistration(event);
+        } else if (event.category === "rider_documents") {
+            rowId = `rider-documents-${event.reference_id}`;
+            message = `${event.rider} submitted verification documents. Review documents`;
+            addDocumentRequest(event);
+        } else if (event.category === "vehicle_request") {
+            rowId = `vehicle-request-${event.reference_id}`;
+            message = `${event.rider} requested a vehicle. Review request`;
+            addVehicleRequest(event);
+        } else if (event.category === "breakdown") {
+            rowId = `breakdown-report-${event.reference_id}`;
+            message = `New rider issue: ${event.rider} reported a problem with ${event.vehicle}. View issue`;
+            addBreakdownRow(event);
+        } else {
+            return;
+        }
+
+        const toast = document.createElement("a");
+        toast.className = "admin-live-toast";
+        toast.href = `#${rowId}`;
+        toast.textContent = message;
+        toast.addEventListener("click", () => {
+            const row = document.getElementById(rowId);
+            row?.classList.add("breakdown-report-highlight");
+            window.setTimeout(() => row?.classList.remove("breakdown-report-highlight"), 4000);
+            toast.remove();
+        });
+        toastContainer.prepend(toast);
+        while (toastContainer.children.length > 5) {
+            toastContainer.lastElementChild.remove();
+        }
+        playNotificationSound();
+    }
+
+    const source = new EventSource(`/admin/events?after_id={{ latest_notification_id }}`);
+    source.onmessage = event => {
+        try {
+            if (seenNotificationIds.has(event.lastEventId)) return;
+            seenNotificationIds.add(event.lastEventId);
+            const notification = JSON.parse(event.data);
+            showNotification(notification);
+        } catch (error) {
+            console.error("Unable to display a new admin notification.", error);
+        }
+    };
+})();
+
+    (() => {
+        const feedback = document.getElementById("admin-live-action-status");
+        if (!feedback) return;
+
+        function approvalAction(path) {
+            if (path === "/admin/rider/approve" || path === "/admin/rider/reject") {
+                return {
+                    table: "#rider-approval-table",
+                    count: "[data-pending-rider-count]",
+                    result: "[data-action-result='rider-accounts']",
+                };
+            }
+            if (/^\/admin\/rider-documents\/\d+\/(approve|reject)$/.test(path)) {
+                return {
+                    table: "#rider-documents-table",
+                    count: "[data-pending-document-count]",
+                    result: "[data-action-result='documents']",
+                };
+            }
+            if (path === "/admin/vehicle-request/approve" || path === "/admin/vehicle-request/reject") {
+                return {
+                    table: "#vehicle-requests-table",
+                    count: "[data-pending-vehicle-count]",
+                    result: "[data-action-result='vehicle-requests']",
+                };
+            }
+            if (path === "/admin/breakdown/approve") {
+                return {
+                    table: ".breakdown-table",
+                    count: "[data-open-breakdown-label]",
+                    result: "[data-action-result='breakdowns']",
+                };
+            }
+            return null;
+        }
+
+        function showFeedback(message, isError = false) {
+            feedback.textContent = message;
+            feedback.hidden = false;
+            feedback.classList.toggle("document-notice-error", isError);
+            feedback.setAttribute("role", isError ? "alert" : "status");
+        }
+
+        document.addEventListener("submit", async event => {
+            const form = event.target;
+            if (!(form instanceof HTMLFormElement)) return;
+
+            const action = new URL(form.action, window.location.href);
+            const update = approvalAction(action.pathname);
+            if (!update) return;
+
+            event.preventDefault();
+            const button = form.querySelector('button[type="submit"]');
+            if (button) button.disabled = true;
+            showFeedback("Saving decision and updating the pending list...");
+
+            try {
+                const response = await fetch(action, {
+                    method: "POST",
+                    body: new FormData(form),
+                    credentials: "same-origin",
+                    headers: { "X-Requested-With": "XMLHttpRequest" },
+                });
+                const html = await response.text();
+                const updatedPage = new DOMParser().parseFromString(html, "text/html");
+                const finalUrl = new URL(response.url);
+                const updatedTable = updatedPage.querySelector(`${update.table} tbody`);
+                if (!response.ok || finalUrl.pathname !== "/admin" || !updatedTable) {
+                    throw new Error(finalUrl.pathname === "/login"
+                        ? "Your admin session is no longer active. Sign in again to continue."
+                        : "The decision could not be completed. Please try again.");
+                }
+
+                const currentTable = document.querySelector(`${update.table} tbody`);
+                if (currentTable) currentTable.innerHTML = updatedTable.innerHTML;
+
+                const updatedCount = updatedPage.querySelector(update.count);
+                const currentCount = document.querySelector(update.count);
+                if (updatedCount && currentCount) currentCount.textContent = updatedCount.textContent;
+
+                const updatedStats = updatedPage.querySelector(".stat-summary-row");
+                const currentStats = document.querySelector(".stat-summary-row");
+                if (updatedStats && currentStats) currentStats.innerHTML = updatedStats.innerHTML;
+
+                const result = updatedPage.querySelector(update.result);
+                showFeedback(
+                    result?.textContent.trim() || "Decision saved. The pending list is up to date.",
+                    result?.getAttribute("role") === "alert",
+                );
+            } catch (error) {
+                console.error("Unable to update the admin approval list.", error);
+                showFeedback(
+                    error instanceof Error ? error.message : "The decision could not be completed. Please try again.",
+                    true,
+                );
+            } finally {
+                if (button) button.disabled = false;
+            }
+        });
+    })();
+
+    function filterFleet() {
+    const term = document.getElementById("fleetSearch").value.toUpperCase();
+    const rows = document.querySelectorAll("#fleetTable tbody tr");
+    rows.forEach(r => {
+        const plate = r.children[1].querySelector('input[name="reg_number"]').value.toUpperCase();
+        r.style.display = plate.includes(term) ? "" : "none";
+    });
+}
+
+(() => {
+    const dialog = document.getElementById("rider-document-viewer");
+    const stage = document.getElementById("rider-document-viewer-stage");
+    const image = document.getElementById("rider-document-viewer-image");
+    const pdf = document.getElementById("rider-document-viewer-pdf");
+    const toolbar = document.getElementById("image-viewer-toolbar");
+    const title = document.getElementById("rider-document-viewer-title");
+    const zoomLevel = document.getElementById("image-zoom-level");
+    const download = document.getElementById("viewer-download");
+    const newTab = document.getElementById("viewer-new-tab");
+    let scale = 1;
+    let rotation = 0;
+
+    function updateImageTransform() {
+        image.style.transform = `scale(${scale}) rotate(${rotation}deg)`;
+        zoomLevel.textContent = `${Math.round(scale * 100)}%`;
+    }
+
+    function closeViewer() {
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        }
+        dialog.close();
+        image.removeAttribute("src");
+        pdf.removeAttribute("src");
+    }
+
+    document.querySelectorAll(".document-preview-trigger").forEach(trigger => {
+        trigger.addEventListener("click", () => {
+            const url = trigger.dataset.documentUrl;
+            const isImage = trigger.dataset.documentType === "image";
+            scale = 1;
+            rotation = 0;
+            title.textContent = trigger.dataset.documentTitle;
+            download.href = `${url}?download=true`;
+            newTab.href = url;
+            image.hidden = !isImage;
+            pdf.hidden = isImage;
+            toolbar.hidden = !isImage;
+            stage.classList.toggle("pdf-viewer-stage", !isImage);
+            if (isImage) {
+                image.src = url;
+                updateImageTransform();
+            } else {
+                pdf.src = url;
+            }
+            dialog.showModal();
+        });
+    });
+
+    dialog.querySelector("[data-viewer-close]").addEventListener("click", closeViewer);
+    dialog.querySelector("[data-viewer-zoom]").parentElement.addEventListener("click", event => {
+        const button = event.target.closest("[data-viewer-zoom]");
+        if (!button) return;
+        scale = Math.max(0.5, Math.min(4, scale + Number(button.dataset.viewerZoom)));
+        updateImageTransform();
+    });
+    dialog.querySelector("[data-viewer-fit]").addEventListener("click", () => {
+        scale = 1;
+        rotation = 0;
+        updateImageTransform();
+    });
+    dialog.querySelector("[data-viewer-rotate]").addEventListener("click", () => {
+        rotation = (rotation + 90) % 360;
+        updateImageTransform();
+    });
+    dialog.querySelector("[data-viewer-fullscreen]").addEventListener("click", () => {
+        if (!document.fullscreenElement) {
+            dialog.requestFullscreen?.();
+        } else {
+            document.exitFullscreen();
+        }
+    });
+    dialog.addEventListener("click", event => {
+        if (event.target === dialog) closeViewer();
+    });
+    dialog.addEventListener("close", () => {
+        image.removeAttribute("src");
+        pdf.removeAttribute("src");
+    });
+    stage.addEventListener("wheel", event => {
+        if (image.hidden || !event.ctrlKey) return;
+        event.preventDefault();
+        scale = Math.max(0.5, Math.min(4, scale + (event.deltaY < 0 ? 0.1 : -0.1)));
+        updateImageTransform();
+    }, { passive: false });
+})();
+</script>
+{% endblock %}

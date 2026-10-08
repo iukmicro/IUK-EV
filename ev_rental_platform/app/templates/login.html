@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In - Urban EV{% endblock %}
+
+{% block content %}
+<div class="standalone-login-wrapper">
+  <div class="login-card">
+    <div class="login-card-header">
+      <div class="header-title">
+        <h3>SIGN IN</h3>
+        <div class="accent-line"></div>
+      </div>
+    </div>
+
+    {% if error %}
+    <div class="alert-error">
+      {{ error }}
+    </div>
+    {% endif %}
+    {% if notice %}
+    <div class="document-notice" role="status">{{ notice }}</div>
+    {% endif %}
+
+    <form action="/login" method="POST">
+      <div class="form-group">
+        <label for="username">FULL NAME, MOBILE NUMBER, OR USERNAME</label>
+        <input 
+          type="text" 
+          id="username" 
+          name="username" 
+          placeholder="Enter your full name or mobile number" 
+          required 
+          autofocus
+          autocomplete="username"
+        >
+      </div>
+
+      <div class="form-group">
+        <label for="password">PASSWORD</label>
+        <input 
+          type="password" 
+          id="password" 
+          name="password" 
+          placeholder="Enter your password" 
+          required
+          autocomplete="current-password"
+        >
+      </div>
+
+      <button type="submit" class="submit-btn">LOG IN TO PORTAL</button>
+    </form>
+
+    <p class="login-signup-link">New rider? <a href="/register">Create an account</a></p>
+  </div>
+</div>
+{% endblock %}

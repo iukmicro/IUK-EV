@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Urban EV - Mobility & Fleet Operations{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=20261008-document-viewer">
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+
+  <!-- Top Navigation Bar -->
+  <header class="navbar">
+    <div class="logo">
+      <a href="/" aria-label="UK Micro Com home">
+        <img class="brand-logo" src="/static/images/uk-micro-com-logo.png" alt="UK Micro Com">
+      </a>
+    </div>
+
+    <nav class="nav-links">
+      {% block nav %}
+      <a href="/">Home</a>
+      <a href="/services">Services</a>
+      <a href="/fleet">Fleet Info</a>
+      <a href="/login" class="btn-login-nav">Login</a>
+      {% endblock %}
+    </nav>
+  </header>
+
+  <!-- Blue Hero Banner -->
+  <section class="hero-banner">
+    <div class="hero-content">
+      <h1>{% block hero_title %}ENTERPRISE PORTAL ACCESS{% endblock %}</h1>
+      <p>{% block hero_subtitle %}AUTHENTICATED ACCESS FOR FLEET ADMINISTRATORS &amp; AUTHORIZED RIDERS{% endblock %}</p>
+    </div>
+  </section>
+
+  <!-- Page Content -->
+  <main>
+    {% block content %}
+    {% endblock %}
+  </main>
+
+  <script>
+  (() => {
+      const revealItems = document.querySelectorAll("[data-scroll-reveal]");
+      if (!revealItems.length || !("IntersectionObserver" in window) ||
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          return;
+      }
+
+      revealItems.forEach(item => item.classList.add("scroll-reveal-pending"));
+
+      const observer = new IntersectionObserver(entries => {
+          entries.forEach(entry => {
+              entry.target.classList.toggle("scroll-reveal-visible", entry.isIntersecting);
+          });
+      }, { threshold: 0.15, rootMargin: "0px 0px -32px 0px" });
+
+      revealItems.forEach(item => observer.observe(item));
+  })();
+  </script>
+</body>
+</html>
